@@ -5,18 +5,19 @@ import os
 import threading
 from contextlib import contextmanager
 from threading import Thread
+from typing import Tuple
 
-from ._colorizer import Colorizer
+from ._colorizer import ColoredFormat, Colorizer
 from ._locks_machinery import create_handler_lock
 
 
-def prepare_colored_format(format_, ansi_level):
-    colored = Colorizer.prepare_format(format_)
+def prepare_colored_format(format_: str, ansi_level: str) -> Tuple[ColoredFormat, str]:
+    colored: ColoredFormat = Colorizer.prepare_format(format_)
     return colored, colored.colorize(ansi_level)
 
 
-def prepare_stripped_format(format_):
-    colored = Colorizer.prepare_format(format_)
+def prepare_stripped_format(format_: str) -> str:
+    colored: ColoredFormat = Colorizer.prepare_format(format_)
     return colored.strip()
 
 

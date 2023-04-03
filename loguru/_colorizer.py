@@ -1,5 +1,28 @@
+"""
+temp notes for me:
+Style, Fore, Back, TokenType: essentially just dataclasses
+ansi_escape(): makes ansi escape codes; referenced only here
+AnsiParser: accessed only here and in conftest.py
+ColoringMessage: referenced only here
+ColoredMessage: referenced only here
+ColoredFormat: referenced only here
+Colorizer: accessed in _handler.py and _logger.py
+
+in _handler:
+  14:prepare_colored_format(): Colorizer.prepare_format(format_).colorize(ansi_level)
+  19:prepare_stripped_format(): Colorizer.prepare_format(format_).strip()
+
+in _logger:
+  163:Core.__init__(): Colorizer.ansify(level.color)
+  927:Logger.add():    Colorizer.prepare_format(format + terminator + "{exception}")
+  1579:Logger.level(): Colorizer.ansify(color)
+  1985:Logger._log():  Colorizer.prepare_message(message, args, kwargs)
+  1987:Logger._log():  Colorizer.prepare_simple_message(str(message))
+"""
+
 import re
 from string import Formatter
+from typing import Dict, Iterable, Iterator, List, Optional, Tuple, Union
 
 
 class Style:
@@ -57,7 +80,7 @@ class Back:
     LIGHTWHITE_EX = 107
 
 
-def ansi_escape(codes):
+def ansi_escape(codes: Dict[str, int]) -> Dict[str, str]:
     return {name: "\033[%dm" % code for name, code in codes.items()}
 
 
@@ -69,7 +92,7 @@ class TokenType:
 
 
 class AnsiParser:
-    _style = ansi_escape(
+    _style: Dict[str, str] = ansi_escape(
         {
             "b": Style.BOLD,
             "d": Style.DIM,
@@ -92,7 +115,7 @@ class AnsiParser:
         }
     )
 
-    _foreground = ansi_escape(
+    _foreground: Dict[str, str] = ansi_escape(
         {
             "k": Fore.BLACK,
             "r": Fore.RED,
@@ -129,7 +152,7 @@ class AnsiParser:
         }
     )
 
-    _background = ansi_escape(
+    _background: Dict[str, str] = ansi_escape(
         {
             "K": Back.BLACK,
             "R": Back.RED,
@@ -166,15 +189,15 @@ class AnsiParser:
         }
     )
 
-    _regex_tag = re.compile(r"\\?</?((?:[fb]g\s)?[^<>\s]*)>")
+    _regex_tag: re.Pattern = re.compile(r"\\?</?((?:[fb]g\s)?[^<>\s]*)>")
 
-    def __init__(self):
-        self._tokens = []
-        self._tags = []
-        self._color_tokens = []
+    def __init__(self) -> None:
+        self._tokens: List[Optional[Tuple[int, Optional[str]]]] = []
+        self._tags: List[str] = []
+        self._color_tokens: List[Optional[Tuple[int, Optional[str]]]] = []
 
     @staticmethod
-    def strip(tokens):
+    def strip(tokens: Iterable[Tuple[int, str]]) -> str:
         output = ""
         for type_, value in tokens:
             if type_ == TokenType.TEXT:
@@ -182,7 +205,7 @@ class AnsiParser:
         return output
 
     @staticmethod
-    def colorize(tokens, ansi_level):
+    def colorize(tokens: Iterable[Tuple[int, str]], ansi_level: str) -> str:
         output = ""
 
         for type_, value in tokens:
@@ -198,7 +221,12 @@ class AnsiParser:
         return output
 
     @staticmethod
-    def wrap(tokens, *, ansi_level, color_tokens):
+    def wrap(
+        tokens: Iterable[Tuple[int, str]],
+        *,
+        ansi_level: str,
+        color_tokens: Iterable[Tuple[int, str]]
+    ) -> str:
         output = ""
 
         for type_, value in tokens:
@@ -213,12 +241,12 @@ class AnsiParser:
 
         return output
 
-    def feed(self, text, *, raw=False):
+    def feed(self, text: str, *, raw: bool = False) -> None:
         if raw:
             self._tokens.append((TokenType.TEXT, text))
             return
 
-        position = 0
+        position: int = 0
 
         for match in self._regex_tag.finditer(text):
             markup, tag = match.group(0), match.group(1)
@@ -244,7 +272,7 @@ class AnsiParser:
                     raise ValueError('Closing tag "%s" has no corresponding opening tag' % markup)
 
             if tag in {"lvl", "level"}:
-                token = (TokenType.LEVEL, None)
+                token: Tuple[int, Optional[str]] = (TokenType.LEVEL, None)
             else:
                 ansi = self._get_ansicode(tag)
 
@@ -263,16 +291,16 @@ class AnsiParser:
 
         self._tokens.append((TokenType.TEXT, text[position:]))
 
-    def done(self, *, strict=True):
+    def done(self, *, strict: bool = True) -> List[Optional[Tuple[int, Optional[str]]]]:
         if strict and self._tags:
-            faulty_tag = self._tags.pop(0)
+            faulty_tag: str = self._tags.pop(0)
             raise ValueError('Opening tag "<%s>" has no corresponding closing tag' % faulty_tag)
         return self._tokens
 
-    def current_color_tokens(self):
+    def current_color_tokens(self) -> List[Optional[Tuple[int, Optional[str]]]]:
         return list(self._color_tokens)
 
-    def _get_ansicode(self, tag):
+    def _get_ansicode(self, tag: str) -> Optional[str]:
         style = self._style
         foreground = self._foreground
         background = self._background
@@ -312,9 +340,10 @@ class AnsiParser:
 
 class ColoringMessage(str):
     __fields__ = ("_messages",)
+    _messages: Iterator[str] = iter(("",))  # to remove mypy error
 
-    def __format__(self, spec):
-        return next(self._messages).__format__(spec)
+    def __format__(self, spec) -> str:
+        return next(self._messages).__format__(spec)  # type: ignore[attr-defined]
 
 
 class ColoredMessage:
@@ -322,22 +351,24 @@ class ColoredMessage:
         self.tokens = tokens
         self.stripped = AnsiParser.strip(tokens)
 
-    def colorize(self, ansi_level):
+    def colorize(self, ansi_level: str) -> str:
         return AnsiParser.colorize(self.tokens, ansi_level)
 
 
 class ColoredFormat:
-    def __init__(self, tokens, messages_color_tokens):
+    def __init__(self, tokens, messages_color_tokens) -> None:  # Iterable[Tuple[int, str]]?
         self._tokens = tokens
         self._messages_color_tokens = messages_color_tokens
 
-    def strip(self):
+    def strip(self) -> str:
         return AnsiParser.strip(self._tokens)
 
-    def colorize(self, ansi_level):
+    def colorize(self, ansi_level: str) -> str:
         return AnsiParser.colorize(self._tokens, ansi_level)
 
-    def make_coloring_message(self, message, *, ansi_level, colored_message):
+    def make_coloring_message(
+        self, message: str, *, ansi_level: str, colored_message: ColoredMessage
+    ):
         messages = [
             message
             if color_tokens is None
@@ -348,17 +379,20 @@ class ColoredFormat:
         ]
         coloring = ColoringMessage(message)
         coloring._messages = iter(messages)
+        # type: ignore[attr-defined]
         return coloring
 
 
 class Colorizer:
     @staticmethod
-    def prepare_format(string):
+    def prepare_format(string: str) -> ColoredFormat:
         tokens, messages_color_tokens = Colorizer._parse_without_formatting(string)
         return ColoredFormat(tokens, messages_color_tokens)
 
     @staticmethod
-    def prepare_message(string, args=(), kwargs={}):  # noqa: B006
+    def prepare_message(
+        string: str, args: tuple = (), kwargs: dict = {}  # noqa: B006
+    ) -> ColoredMessage:
         tokens = Colorizer._parse_with_formatting(string, args, kwargs)
         return ColoredMessage(tokens)
 
@@ -378,8 +412,14 @@ class Colorizer:
 
     @staticmethod
     def _parse_with_formatting(
-        string, args, kwargs, *, recursion_depth=2, auto_arg_index=0, recursive=False
-    ):
+        string,
+        args,
+        kwargs,
+        *,
+        recursion_depth=2,
+        auto_arg_index: Union[int, bool] = 0,
+        recursive=False
+    ) -> Union[List[Tuple[int, str]], Tuple[str, Union[int, bool]]]:
         # This function re-implements Formatter._vformat()
 
         if recursion_depth < 0:
@@ -411,9 +451,12 @@ class Colorizer:
                     auto_arg_index = False
 
                 obj, _ = formatter.get_field(field_name, args, kwargs)
-                obj = formatter.convert_field(obj, conversion)
+                obj = formatter.convert_field(obj, conversion)  # type: ignore[arg-type]
 
-                format_spec, auto_arg_index = Colorizer._parse_with_formatting(
+                (
+                    format_spec_,
+                    auto_arg_index,
+                ) = Colorizer._parse_with_formatting(  # type: ignore[assignment]
                     format_spec,
                     args,
                     kwargs,
@@ -422,10 +465,12 @@ class Colorizer:
                     recursive=True,
                 )
 
-                formatted = formatter.format_field(obj, format_spec)
+                formatted = formatter.format_field(obj, format_spec_)  # type: ignore[arg-type]
                 parser.feed(formatted, raw=True)
 
-        tokens = parser.done()
+        tokens: List[Tuple[int, str]] = [
+            None if x is None else (x[0], str(x[1])) for x in parser.done()  # type: ignore[misc]
+        ]
 
         if recursive:
             return AnsiParser.strip(tokens), auto_arg_index
@@ -433,14 +478,19 @@ class Colorizer:
         return tokens
 
     @staticmethod
-    def _parse_without_formatting(string, *, recursion_depth=2, recursive=False):
+    def _parse_without_formatting(
+        string: str, *, recursion_depth: int = 2, recursive: bool = False
+    ) -> Tuple[
+        List[Optional[Tuple[int, Optional[str]]]], List[Optional[Tuple[int, Optional[str]]]]
+    ]:
+        # Tuple[List[Tuple[int, Optional[str]]], List[Optional[Tuple[int, Optional[str]]]]]:
         if recursion_depth < 0:
             raise ValueError("Max string recursion exceeded")
 
         formatter = Formatter()
         parser = AnsiParser()
 
-        messages_color_tokens = []
+        messages_color_tokens: List[Optional[Tuple[int, Optional[str]]]] = []
 
         for literal_text, field_name, format_spec, conversion in formatter.parse(string):
             if literal_text and literal_text[-1] in "{}":
@@ -453,8 +503,12 @@ class Colorizer:
                     if recursive:
                         messages_color_tokens.append(None)
                     else:
-                        color_tokens = parser.current_color_tokens()
-                        messages_color_tokens.append(color_tokens)
+                        color_tokens: List[
+                            Optional[Tuple[int, Optional[str]]]
+                        ] = parser.current_color_tokens()
+                        messages_color_tokens.append(color_tokens)  # type: ignore[arg-type]
+                        # .extend would solve mypy errors - what is going on here?
+
                 field = "{%s" % field_name
                 if conversion:
                     field += "!%s" % conversion
@@ -464,7 +518,7 @@ class Colorizer:
                 parser.feed(field, raw=True)
 
                 _, color_tokens = Colorizer._parse_without_formatting(
-                    format_spec, recursion_depth=recursion_depth - 1, recursive=True
+                    str(format_spec), recursion_depth=recursion_depth - 1, recursive=True
                 )
                 messages_color_tokens.extend(color_tokens)
 

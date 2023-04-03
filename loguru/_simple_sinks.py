@@ -83,8 +83,6 @@ class AsyncSink:
             return
 
         coroutine: Coroutine = self._function(message)
-        # with open("/tmp/tmp", 'a') as f:
-        #     f.write(f"AsyncSink write(), couroutine: {type(coroutine)}\n")
 
         task: asyncio.Task = loop.create_task(coroutine)
 
